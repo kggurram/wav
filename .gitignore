@@ -1,0 +1,18 @@
+# macOS
+.DS_Store
+
+# Xcode
+build/
+DerivedData/
+*.xcuserstate
+
+# SwiftPM
+/.build
+/Packages
+Package.resolved
+
+# Firebase
+GoogleService-Info.plist
+
+# Personal
+*.xcuserdatad
