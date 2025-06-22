@@ -7,49 +7,137 @@
 
 import SwiftUI
 import SwiftData
+import FirebaseCore
+import FirebaseStorage
+import FirebaseAuth
+
 
 struct ContentView: View {
     @Environment(\.modelContext) private var modelContext
-    @Query private var items: [Item]
+    @Query private var recordings: [Recording]
+
+    @StateObject private var recorder = AudioRecorderService.shared
+    @StateObject private var player = AudioPlaybackService.shared
 
     var body: some View {
-        NavigationSplitView {
-            List {
-                ForEach(items) { item in
-                    NavigationLink {
-                        Text("Item at \(item.timestamp, format: Date.FormatStyle(date: .numeric, time: .standard))")
-                    } label: {
-                        Text(item.timestamp, format: Date.FormatStyle(date: .numeric, time: .standard))
+        NavigationStack {
+            VStack {
+                List {
+                    ForEach(recordings) { recording in
+                        VStack(alignment: .leading, spacing: 4) {
+                            HStack {
+                                Text(recording.title.isEmpty ? "Untitled" : recording.title)
+                                    .font(.headline)
+
+                                Spacer()
+
+                                Button(action: {
+                                    if player.currentlyPlayingFile == recording.fileName {
+                                        player.stop()
+                                    } else {
+                                        player.play(fileName: recording.fileName)
+                                    }
+                                }) {
+                                    Image(systemName: player.currentlyPlayingFile == recording.fileName ? "stop.fill" : "play.fill")
+                                        .foregroundColor(.white)
+                                        .padding(8)
+                                        .background(Color.gray.opacity(0.3))
+                                        .clipShape(Circle())
+                                }
+                            }
+
+                            HStack(spacing: 16) {
+                                Text("Created: \(recording.createdAt.formatted(date: .abbreviated, time: .shortened))")
+                                Text("Duration: \(player.getDurationString(for: recording.fileName))")
+                            }
+                            .font(.caption)
+
+                            if let waveform = waveformForRecording(recording) {
+                                WaveformView(amplitudes: waveform)
+                            }
+
+                            // ✅ Scrubbable playback bar
+                            if player.currentlyPlayingFile == recording.fileName {
+                                PlaybackBarView(player: player, fileName: recording.fileName)
+                            }
+                        }
+
                     }
+                    .onDelete(perform: deleteItems)
                 }
-                .onDelete(perform: deleteItems)
-            }
-            .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    EditButton()
-                }
-                ToolbarItem {
-                    Button(action: addItem) {
-                        Label("Add Item", systemImage: "plus")
+
+                Divider()
+
+                // Live Waveform & Record Button
+                if recorder.isRecording {
+                    LiveWaveformView(amplitude: recorder.liveAmplitude)
+                        .padding(.top)
+
+                    Button(action: toggleRecording) {
+                        Label("Stop Recording", systemImage: "stop.fill")
+                            .frame(maxWidth: .infinity)
+                            .padding()
+                            .background(Color.red)
+                            .foregroundColor(.white)
+                            .cornerRadius(12)
                     }
+                    .padding()
+                } else {
+                    Button(action: toggleRecording) {
+                        Label("Start Recording", systemImage: "mic.fill")
+                            .frame(maxWidth: .infinity)
+                            .padding()
+                            .background(Color.blue)
+                            .foregroundColor(.white)
+                            .cornerRadius(12)
+                    }
+                    .padding()
                 }
             }
-        } detail: {
-            Text("Select an item")
+            .navigationTitle("WAV Recordings")
         }
     }
 
-    private func addItem() {
-        withAnimation {
-            let newItem = Item(timestamp: Date())
-            modelContext.insert(newItem)
+    private func toggleRecording() {
+        if recorder.isRecording {
+            recorder.stopRecording()
+            if let fileURL = recorder.currentFileURL {
+                let fileName = fileURL.lastPathComponent
+                let newRecording = Recording(fileName: fileName, title: fileName)
+                modelContext.insert(newRecording)
+                
+                // Delay upload to give iOS time to write the file
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                    if let userId = Auth.auth().currentUser?.uid {
+                        FirebaseStorageManager.shared.uploadRecording(fileURL: fileURL, userId: userId) { success in
+                            if success {
+                                print("✅ File uploaded. Ready for analysis.")
+                            } else {
+                                print("❌ Upload failed (after delay)")
+                            }
+                        }
+                    }
+                }
+            }
+        } else {
+            let fileName = "WAV-\(UUID().uuidString.prefix(8))"
+            recorder.startRecording(fileName: String(fileName))
         }
+    }
+
+    private func waveformForRecording(_ recording: Recording) -> [Float]? {
+        let url = getDocumentsDirectory().appendingPathComponent(recording.fileName)
+        return WaveformExtractor.extractAmplitudes(from: url)
+    }
+
+    private func getDocumentsDirectory() -> URL {
+        FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
     }
 
     private func deleteItems(offsets: IndexSet) {
         withAnimation {
             for index in offsets {
-                modelContext.delete(items[index])
+                modelContext.delete(recordings[index])
             }
         }
     }
@@ -57,6 +145,5 @@ struct ContentView: View {
 
 #Preview {
     ContentView()
-        .modelContainer(for: Item.self, inMemory: true)
+        .modelContainer(for: Recording.self, inMemory: true)
 }
-
