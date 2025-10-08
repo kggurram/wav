@@ -1,8 +1,8 @@
-# WAV Analyzer
+# WAVs
 
 <!-- ![Example Output](example-image.png) -->
 
-WAV Analyzer is a Flask-based serverless audio analysis service deployed on **Google Cloud Run**. It receives a `.wav` file stored in Firebase Storage and returns:
+WAVs is a Flask-based serverless audio analysis service deployed on **Google Cloud Run**. It receives a `.wav` file stored in Firebase Storage and returns:
 
 - **Transcription** via [OpenAI Whisper](https://github.com/openai/whisper)
 - **Tempo & Key Detection** via [Librosa](https://librosa.org/)
